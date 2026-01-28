@@ -127,13 +127,13 @@ LLR <- function(X, P_density, Q_density) {
 
 # ========== Simulation ==========
 
-# Define parameters for heatmap analysis
+# Define parameters
 sample_sizes <- c(100, 200, 400, 800, 1600, 3200)
-mu1_values <- c(-0.2, -0.1, -0.05, 0, 0.05, 0.1, 0.2)
 epsilon_values <- c(0.5, 1, 2)
+mu1_values <- c(0, 0.03, 0.05, 0.1, 0.2, 0.4)
 
 # Initialize storage for results
-results_heatmap <- data.frame(
+results_all <- data.frame(
   epsilon = numeric(),
   n_samples = integer(),
   mu1 = numeric(),
@@ -141,103 +141,87 @@ results_heatmap <- data.frame(
   power_ddcLLR = numeric()
 )
 
-# Define P density (fixed)
-P_density <- function(x) dlogis(x, 0, 1)
-
-# Define SINGLE FIXED Q density for two-sided test
-Q_density <- function(x) dlogis(x, 0.03, 1)  # Fixed alternative at +0.03
-
-# Number of simulations
-n_simulations_H0_samples <- 1000  # For null distribution
-n_simulations_H1 <- 1000           # For power calculation
-
-# Loop over epsilon values (each creates one heatmap)
+# Loop over epsilon values
 for (epsilon in epsilon_values) {
   cat("\n########################################\n")
   cat("####### EPSILON =", epsilon, "#######\n")
   cat("########################################\n")
   
-  # Loop over sample sizes (columns of heatmap)
-  for (n_samples in sample_sizes) {
+  # Loop over mu1 values (alternative hypothesis mean)
+  for (mu1 in mu1_values) {
+    cat("\n========================================\n")
+    cat("Processing epsilon =", epsilon, ", mu1 =", mu1, "\n")
+    cat("========================================\n")
     
-    # Setup for GDP test
-    dp_info <- list(
-      q = c("lower", "upper"),
-      epsilon = epsilon,
-      alpha = 3,
-      l_m = -Inf,
-      u_m = Inf,
-      u_s = 10
-    )
+    # Define densities for the log likelihood ratio test statistic
+    P_density <- function(x) dnorm(x, 0, 1)
+    Q_density <- function(x) dnorm(x, 0.02, 1)
     
-    # Step 1: Generate null distribution samples (H0: data from P)
-    LLR_H0_samples <- numeric(n_simulations_H0_samples)
-    ddcLLR_H0_samples <- numeric(n_simulations_H0_samples)
-    
-    cat("Generating null distribution for n =", n_samples, "...\n")
-    pb <- txtProgressBar(min = 0, max = n_simulations_H0_samples, style = 3)
-    set.seed(12345 + 1000 * epsilon + n_samples)
-    
-    for (i in 1:n_simulations_H0_samples) {
-      X_from_P <- rlogis(n_samples, 0, 1)
-      LLR_H0_samples[i] <- LLR(X_from_P, P_density, Q_density)$test_statistic
-      ddcLLR_H0_samples[i] <- LLR.GDP.Test(X_from_P, dp_info, P_density, Q_density)$test_statistic
+    # Loop over sample sizes
+    for (n_samples in sample_sizes) {
+      cat("\nProcessing n_samples =", n_samples, "\n")
       
-      setTxtProgressBar(pb, i)
-    }
-    close(pb)
-    
-    # Compute the expected value under H0 (center point)
-    E0_T_LLR <- mean(LLR_H0_samples)
-    E0_T_ddcLLR <- mean(ddcLLR_H0_samples)
-    
-    # Two-sided test statistic under H0: |T - E0[T]|
-    LLR_H0_abs <- abs(LLR_H0_samples - E0_T_LLR)
-    ddcLLR_H0_abs <- abs(ddcLLR_H0_samples - E0_T_ddcLLR)
-    
-    # Loop over mu1 values (rows of heatmap) for power calculation
-    for (mu1 in mu1_values) {
-      cat("Processing epsilon =", epsilon, ", mu1 =", mu1, ", n =", n_samples, "\n")
+      # Setup for GDP test
+      dp_info <- list(
+        q = c("lower", "upper"),
+        epsilon = epsilon,
+        alpha = 3,
+        l_m = -Inf,
+        u_m = Inf,
+        u_s = 10
+      )
       
-      # Step 2: Calculate Power under H1 (data from Q with location mu1)
-      LLR_H1_samples <- numeric(n_simulations_H1)
-      ddcLLR_H1_samples <- numeric(n_simulations_H1)
+      # Step 1: Generate null distribution samples (1000 simulations)
+      n_simulations_H0_samples <- 1000
+      LLR_H0_samples <- numeric(n_simulations_H0_samples)
+      GDP_H0_samples <- numeric(n_simulations_H0_samples)
       
-      cat("Calculating power...\n")
-      pb <- txtProgressBar(min = 0, max = n_simulations_H1, style = 3)
-      set.seed(54321 + 1000 * epsilon + 100 * abs(mu1) * 100 + n_samples)
+      cat("Generating null distribution with", n_simulations_H0_samples, "simulations...\n")
+      pb <- txtProgressBar(min = 0, max = n_simulations_H0_samples, style = 3)
+      set.seed(12345 + 1000 * epsilon + 100 * mu1 + n_samples)
       
-      for (i in 1:n_simulations_H1) {
-        # Generate data from the TRUE alternative (actual mu1)
-        X_from_Q <- rlogis(n_samples, mu1, 1)
-        
-        # Calculate test statistics using FIXED Q at +0.03
-        LLR_H1_samples[i] <- LLR(X_from_Q, P_density, Q_density)$test_statistic
-        ddcLLR_H1_samples[i] <- LLR.GDP.Test(X_from_Q, dp_info, P_density, Q_density)$test_statistic
+      for (i in 1:n_simulations_H0_samples) {
+        # H0: Data from P (mean = 0)
+        X_from_P <- rnorm(n_samples, 0, 1)
+        LLR_H0_samples[i] <- LLR(X_from_P, P_density, Q_density)$test_statistic
+        GDP_H0_samples[i] <- LLR.GDP.Test(X_from_P, dp_info, P_density, Q_density)$test_statistic
         
         setTxtProgressBar(pb, i)
       }
       close(pb)
       
-      # Two-sided test statistic under H1: |T - E0[T]|
-      # Use the SAME centering point E0_T from the null distribution
-      LLR_H1_abs <- abs(LLR_H1_samples - E0_T_LLR)
-      ddcLLR_H1_abs <- abs(ddcLLR_H1_samples - E0_T_ddcLLR)
+      # Step 2: Calculate Power (1000 simulations under H1)
+      n_simulations <- 1000
+      LLR_H1 <- numeric(n_simulations)
+      GDP_H1 <- numeric(n_simulations)
       
-      # Calculate power for two-sided test
-      # Reject H0 if |T - E0[T]| is large (exceeds critical value from H0)
-      power_LLR <- mean(sapply(LLR_H1_abs, function(t_obs) {
-        pvalue <- (1 + sum(LLR_H0_abs >= t_obs)) / (n_simulations_H0_samples + 1)
+      cat("\nCalculating Power with", n_simulations, "simulations...\n")
+      pb <- txtProgressBar(min = 0, max = n_simulations, style = 3)
+      set.seed(54321 + 1000 * epsilon + 100 * mu1 + n_samples)
+      
+      for (i in 1:n_simulations) {
+        # H1: Data from Q (mean = mu1)
+        X_from_Q <- rnorm(n_samples, mu1, 1)
+        LLR_H1[i] <- LLR(X_from_Q, P_density, Q_density)$test_statistic
+        GDP_H1[i] <- LLR.GDP.Test(X_from_Q, dp_info, P_density, Q_density)$test_statistic
+        
+        setTxtProgressBar(pb, i)
+      }
+      close(pb)
+      
+      # Calculate power using p-value formula
+      power_LLR <- mean(sapply(LLR_H1, function(t_obs) {
+        pvalue <- (1 + sum(LLR_H0_samples <= t_obs)) / (n_simulations_H0_samples + 1)
         pvalue <= 0.05
       }))
       
-      power_ddcLLR <- mean(sapply(ddcLLR_H1_abs, function(t_obs) {
-        pvalue <- (1 + sum(ddcLLR_H0_abs >= t_obs)) / (n_simulations_H0_samples + 1)
+      power_ddcLLR <- mean(sapply(GDP_H1, function(t_obs) {
+        pvalue <- (1 + sum(GDP_H0_samples <= t_obs)) / (n_simulations_H0_samples + 1)
         pvalue <= 0.05
       }))
       
       # Store results
-      results_heatmap <- rbind(results_heatmap, data.frame(
+      results_all <- rbind(results_all, data.frame(
         epsilon = epsilon,
         n_samples = n_samples,
         mu1 = mu1,
@@ -251,15 +235,16 @@ for (epsilon in epsilon_values) {
   }
 }
 
-# Print final summary
+# Print final summary table
 cat("\n\n========================================\n")
 cat("FINAL RESULTS SUMMARY\n")
 cat("========================================\n")
-print(results_heatmap)
+print(results_all)
 
 # Save results
-write.csv(results_heatmap, "heatmap_twosided_all_methods.csv", row.names = FALSE)
-cat("\nResults saved to 'heatmap_twosided_all_methods.csv'\n")
+write.csv(results_all, "heatmap_results_all_methods.csv", row.names = FALSE)
+cat("\nResults saved to 'heatmap_results_all_methods.csv'\n")
+
 
 ###########################################################################
 ###########################################################################
@@ -303,87 +288,57 @@ ptulap <- function (t, median = 0, lambda = 0, cut=0) {
 library(rmutil)
 library(dgof)
 
-
-KS <- function(x,cdf,ep,Kuiper = FALSE){
+# One-sided KS test (greater alternative)
+KS <- function(x, cdf, ep){
   n = length(x)
-  ks = ks.test(x,cdf,alternative = "two.sided")$statistic
-  if(Kuiper == "Kuiper"){ ### No Kuiper for one-sided ###
-    Dplus = ks.test(x,cdf,alternative="greater")$statistic
-    Dminus = ks.test(x,cdf,alternative="less")$statistic
-    ks = Dplus + Dminus
-  }
-  #N = (1/n)*rtulap(n=1, median = 0, lambda = exp(-ep), cut=0)
+  # Use "greater" for one-sided test
+  ks = ks.test(x, cdf, alternative = "less")$statistic
+  
+  # Add noise for differential privacy
   N = (1/n)*rnorm(n=1, mean = 0, sd = 1/ep)
-  ks = ks+N
+  ks = ks + N
   return(ks)
 }
 
-Unknown_GOF<-function(x,ep,Kuiper = FALSE){
-  #the minimum KS parameter estimates, estimate mean and sd of normal based on the sample x
-  KSEstimator <- function(x){
-    KSDis <- function(param){
-      ks_min = ks.test(x,"pnorm",mean =param[1],sd = param[2],alternative="two.sided")$statistic
-      if(Kuiper == "Kuiper"){
-        Dplus = ks.test(x,"pnorm",mean =param[1],sd = param[2],alternative="greater")$statistic
-        Dminus = ks.test(x,"pnorm",mean =param[1],sd = param[2],alternative="less")$statistic
-        ks_min = Dplus+Dminus
-      }
-      return(ks_min)
-    }
-    res <- optim(c(0,1), fn = KSDis)$par
-    return(list(mean = res[1], sd = res[2]))
-  }
-  ks_param = KSEstimator(x=x)
-  fitted_cdf = function(t){
-    return(pnorm(t,mean = ks_param$mean, sd = ks_param$sd))
-  }
-  #Then to evaluate the distance we can just use the above implementation of KS:
-  ks = KS(x,fitted_cdf,ep = ep,Kuiper = Kuiper)
-  return(ks)
-}
-
-Cramer <- function(x,cdf,ep) {
+Cramer <- function(x, cdf, ep) {
   U = sort(x)
   n = length(x)
   rank = seq_len(n)
   ###JA "U" should be replaced with cdf(U)
   omega2 = 1/(12 * n) + sum(((2*rank - 1)/(2*n)-cdf(U))^2)
   omega2 = sqrt(omega2/n)
-  ### Add (1/n)*rlaplace(s=1/ep)
-  #omega2 = omega2 + (1/n)*rlaplace(s=1/ep)
   ### Add (1/n)*rnorm(1/ep)
   omega2 = omega2 + (1/n)*rnorm(1,0,1/ep)
   return(omega2)
 }
 
 cdf <- function(q){
-  return (pnorm(q,m=0,s=1))
+  return (pnorm(q, m=0, s=1))
 }
 
-pdf<- function(x){
-  return(dnorm(x,0,1))
+pdf <- function(x){
+  return(dnorm(x, 0, 1))
 }
 
-reference = function(n,ep,reps,type,Kuiper = FALSE){
-  #x = rnorm(n*reps,0,1)
-  #x = rlaplace(n*reps,0,1)
-  x = rlogis(n*reps,0,1)
-  x_mat = matrix(x,nrow=reps,ncol=n)
+# Reference distribution generation (no Kuiper for one-sided)
+reference = function(n, ep, reps, type){
+  # Generate data from logistic distribution
+  x = rnorm(n*reps, 0, 1)
+  x_mat = matrix(x, nrow=reps, ncol=n)
+  
   if(type == "cramer")
-    return(apply(X=x_mat,MARGIN=1, FUN=Cramer,cdf = pnorm,ep=ep))
+    return(apply(X=x_mat, MARGIN=1, FUN=Cramer, cdf = pnorm, ep=ep))
   if(type == "ks")
-    return(apply(X=x_mat,MARGIN=1, FUN=KS,cdf = pnorm,ep=ep,Kuiper = Kuiper))
-  if(type == "Unknown")
-    return(apply(X=x_mat,MARGIN=1, FUN=Unknown_GOF, ep=ep,Kuiper = Kuiper))
+    return(apply(X=x_mat, MARGIN=1, FUN=KS, cdf = pnorm, ep=ep))
 }
 
+# ========== Simulation ==========
 
-# Define parameters
 reps = 1000
 al = 0.05
 nVec = c(100, 200, 400, 800, 1600, 3200)
 epVec = c(0.5, 1, 2)
-mu1_values = c(-0.2, -0.1, -0.05, 0, 0.05, 0.1, 0.2)  # Location shifts
+mu1_values = c(0, 0.03, 0.05, 0.1, 0.2, 0.4)  # Location shifts
 
 # Initialize results storage
 results_KS = data.frame()
@@ -396,37 +351,33 @@ for (ep_idx in 1:length(epVec)) {
     mu1 = mu1_values[mu1_idx]
     print(paste("  Running mu1 =", mu1))
     
-    p_GOF_KS = p_Cramer = p_KS_V = rep(0, reps)
-    power_GOF_KS = power_Cramer = power_ksv = rep(0, length(nVec))
+    p_GOF_KS = p_Cramer = rep(0, reps)
+    power_GOF_KS = power_Cramer = rep(0, length(nVec))
     
     for (k in 1:length(nVec)){
       print(paste("    Progress: n =", nVec[k], "(", k, "/", length(nVec), ")"))
       n = nVec[k]
       
-      # Generate null distributions
+      # Generate null distributions (no Kuiper parameter)
       null_cramer = ecdf(reference(n=n, ep=ep, reps=1000, type="cramer"))
       null_ks = ecdf(reference(n=n, ep=ep, reps=1000, type="ks"))
-      null_ksv = ecdf(reference(n=n, ep=ep, reps=1000, type="ks", Kuiper="Kuiper"))
       
       for(i in 1:reps){
         # Generate data from logistic with location shift mu1
-        x = rlogis(n, mu1, 1) 
+        x = rnorm(n, mu1, 1) 
         
         # Calculate test statistics
         cramer = Cramer(x, cdf, ep) 
-        ks = KS(x, cdf, ep, Kuiper=FALSE)
-        ksv = KS(x, cdf, ep, Kuiper="Kuiper")
+        ks = KS(x, cdf, ep)
         
         # Calculate p-values
         p_Cramer[i] = 1 - null_cramer(cramer)
         p_GOF_KS[i] = 1 - null_ks(ks)
-        p_KS_V[i] = 1 - null_ksv(ksv)
       }
       
       # Calculate power
       power_GOF_KS[k] = mean(p_GOF_KS < al)
       power_Cramer[k] = mean(p_Cramer < al)
-      power_ksv[k] = mean(p_KS_V < al)
       
       # Store results for this combination
       results_KS = rbind(results_KS, data.frame(
@@ -434,8 +385,7 @@ for (ep_idx in 1:length(epVec)) {
         n_samples = n,
         mu1 = mu1,
         power_KS = round(power_GOF_KS[k], 3),
-        power_Cramer = round(power_Cramer[k], 3),
-        power_KS_Kuiper = round(power_ksv[k], 3)
+        power_Cramer = round(power_Cramer[k], 3)
       ))
     }
   }
@@ -445,36 +395,34 @@ for (ep_idx in 1:length(epVec)) {
 print(results_KS)
 
 # Save results
-write.csv(results_KS, "ks_test_results_with_mu1.csv", row.names = FALSE)
+write.csv(results_KS, "ks_test_results_one_sided_with_mu1.csv", row.names = FALSE)
 
-# ========================================
-# MERGE WITH results_heatmap (LLR and ddcLLR)
-# ========================================
-if (exists("results_heatmap")) {
-  results_combined = merge(results_heatmap, results_KS, 
-                           by = c("epsilon", "n_samples", "mu1"),
-                           all = TRUE)
+# Merge with results_all (contains LLR and ddcLLR)
+if (exists("results_all")) {
+  results_combined = merge(results_all, results_KS, by = c("epsilon", "n_samples", "mu1"))
   
   cat("\n\n========================================\n")
-  cat("COMBINED RESULTS (LLR, ddcLLR, KS, Cramér, Kuiper)\n")
+  cat("COMBINED RESULTS (LLR, ddcLLR, KS, Cramér)\n")
   cat("========================================\n")
   print(results_combined)
   
-  write.csv(results_combined, "combined_twosided_all_methods_results.csv", row.names = FALSE)
+  write.csv(results_combined, "combined_all_methods_heatmap_results.csv", row.names = FALSE)
 } else {
-  cat("\nWarning: results_heatmap not found. Using only KS results.\n")
+  cat("\nWarning: results_all not found. Using only KS and Cramer results.\n")
   results_combined = results_KS
 }
 
 # ========================================
 # VISUALIZATION
 # ========================================
+
 library(ggplot2)
 library(reshape2)
 library(gridExtra)
 library(tidyr)
 library(dplyr)
 library(cowplot)
+
 
 if (exists("results_all")) {
   for (eps in epVec) {
@@ -530,14 +478,14 @@ if (exists("results_all")) {
              x = x_label, y = y_label) +
         theme_minimal() +
         theme(
-          axis.text.x = if(plot_counter %in% c(1, 2)) element_blank() else element_text(angle = 41, hjust = 1, size = 17, face = "bold"),
-          axis.text.y = if(plot_counter %in% c(2, 4)) element_blank() else element_text(size = 17, face = "bold"),
-          axis.title.x = if(plot_counter %in% c(1, 2)) element_blank() else element_text(size = 19, face = "bold"),
-          axis.title.y = element_text(size = 19, face = "bold"),
+          axis.text.x = if(plot_counter %in% c(1, 2)) element_blank() else element_text(angle = 33, hjust = 1, size = 15, face = "bold"),
+          axis.text.y = if(plot_counter %in% c(2, 4)) element_blank() else element_text(size = 15, face = "bold"),
+          axis.title.x = if(plot_counter %in% c(1, 2)) element_blank() else element_text(size = 18, face = "bold"),
+          axis.title.y = element_text(size = 18, face = "bold"),
           axis.ticks.x = if(plot_counter %in% c(1, 2)) element_blank() else element_line(),
           axis.ticks.y = if(plot_counter %in% c(2, 4)) element_blank() else element_line(),
           legend.position = "none",
-          plot.title = element_text(size = 19, hjust = 0.5, face = "bold"),
+          plot.title = element_text(size = 18, hjust = 0.5, face = "bold"),
           plot.margin = unit(c(0, 0, 0, 0), "pt"),
           panel.spacing = unit(0, "pt"),
           plot.background = element_blank()
@@ -562,7 +510,7 @@ if (exists("results_all")) {
     # Add title
     title = ggdraw() + 
       draw_label(paste0(""), 
-                 fontface = 'bold', size = 14)
+                 fontface = 'bold', size = 15)
     
     final_plot_with_title = plot_grid(title, plot_grid_2x2, ncol = 1, 
                                       rel_heights = c(0.05, 1))

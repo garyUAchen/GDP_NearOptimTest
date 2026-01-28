@@ -99,29 +99,31 @@ dp.meanEst <- function(D, dp_info) {
   return(mean(data_clamped) + z_noise)
 }
 
-# ========== LLR GDP TEST ==========
+# ========== MLR GDP TEST ==========
+# For distributions with Monotone Likelihood Ratio property,
+# the sufficient statistic is X itself
 
-LLR.GDP.Test <- function(X, dp_info, P_density, Q_density) {
+MLR.GDP.Test <- function(X, dp_info) {
   n <- length(X)
-  log_ratios <- log(P_density(X) / Q_density(X))
   
-  test_statistic <- n * dp.meanEst(log_ratios, dp_info)
+  # For MLR, we directly use X as the test statistic
+  test_statistic <- n * dp.meanEst(X, dp_info)
   
   return(list(
     test_statistic = test_statistic,
-    log_ratios = log_ratios
+    data = X
   ))
 }
 
-# ========== Standard LLR ==========
+# ========== Standard MLR Test ==========
+# Standard test using sample mean of X
 
-LLR <- function(X, P_density, Q_density) {
-  log_ratios <- log(P_density(X) / Q_density(X))
-  test_statistic <- sum(log_ratios)
+MLR.Test <- function(X) {
+  test_statistic <- sum(X)
   
   return(list(
     test_statistic = test_statistic,
-    log_ratios = log_ratios
+    data = X
   ))
 }
 
@@ -137,8 +139,8 @@ results_all <- data.frame(
   epsilon = numeric(),
   n_samples = integer(),
   mu1 = numeric(),
-  power_LLR = numeric(),
-  power_ddcLLR = numeric()
+  power_MLR = numeric(),
+  power_ddcMLR = numeric()
 )
 
 # Loop over epsilon values
@@ -152,10 +154,6 @@ for (epsilon in epsilon_values) {
     cat("\n========================================\n")
     cat("Processing epsilon =", epsilon, ", mu1 =", mu1, "\n")
     cat("========================================\n")
-    
-    # Define densities for the log likelihood ratio test statistic
-    P_density <- function(x) dnorm(x, 0, 1)
-    Q_density <- function(x) dnorm(x, 0.02, 1)
     
     # Loop over sample sizes
     for (n_samples in sample_sizes) {
@@ -173,7 +171,7 @@ for (epsilon in epsilon_values) {
       
       # Step 1: Generate null distribution samples (1000 simulations)
       n_simulations_H0_samples <- 1000
-      LLR_H0_samples <- numeric(n_simulations_H0_samples)
+      MLR_H0_samples <- numeric(n_simulations_H0_samples)
       GDP_H0_samples <- numeric(n_simulations_H0_samples)
       
       cat("Generating null distribution with", n_simulations_H0_samples, "simulations...\n")
@@ -183,8 +181,8 @@ for (epsilon in epsilon_values) {
       for (i in 1:n_simulations_H0_samples) {
         # H0: Data from P (mean = 0)
         X_from_P <- rnorm(n_samples, 0, 1)
-        LLR_H0_samples[i] <- LLR(X_from_P, P_density, Q_density)$test_statistic
-        GDP_H0_samples[i] <- LLR.GDP.Test(X_from_P, dp_info, P_density, Q_density)$test_statistic
+        MLR_H0_samples[i] <- MLR.Test(X_from_P)$test_statistic
+        GDP_H0_samples[i] <- MLR.GDP.Test(X_from_P, dp_info)$test_statistic
         
         setTxtProgressBar(pb, i)
       }
@@ -192,7 +190,7 @@ for (epsilon in epsilon_values) {
       
       # Step 2: Calculate Power (1000 simulations under H1)
       n_simulations <- 1000
-      LLR_H1 <- numeric(n_simulations)
+      MLR_H1 <- numeric(n_simulations)
       GDP_H1 <- numeric(n_simulations)
       
       cat("\nCalculating Power with", n_simulations, "simulations...\n")
@@ -202,21 +200,21 @@ for (epsilon in epsilon_values) {
       for (i in 1:n_simulations) {
         # H1: Data from Q (mean = mu1)
         X_from_Q <- rnorm(n_samples, mu1, 1)
-        LLR_H1[i] <- LLR(X_from_Q, P_density, Q_density)$test_statistic
-        GDP_H1[i] <- LLR.GDP.Test(X_from_Q, dp_info, P_density, Q_density)$test_statistic
+        MLR_H1[i] <- MLR.Test(X_from_Q)$test_statistic
+        GDP_H1[i] <- MLR.GDP.Test(X_from_Q, dp_info)$test_statistic
         
         setTxtProgressBar(pb, i)
       }
       close(pb)
       
       # Calculate power using p-value formula
-      power_LLR <- mean(sapply(LLR_H1, function(t_obs) {
-        pvalue <- (1 + sum(LLR_H0_samples <= t_obs)) / (n_simulations_H0_samples + 1)
+      power_MLR <- mean(sapply(MLR_H1, function(t_obs) {
+        pvalue <- (1 + sum(MLR_H0_samples >= t_obs)) / (n_simulations_H0_samples + 1)
         pvalue <= 0.05
       }))
       
-      power_ddcLLR <- mean(sapply(GDP_H1, function(t_obs) {
-        pvalue <- (1 + sum(GDP_H0_samples <= t_obs)) / (n_simulations_H0_samples + 1)
+      power_ddcMLR <- mean(sapply(GDP_H1, function(t_obs) {
+        pvalue <- (1 + sum(GDP_H0_samples >= t_obs)) / (n_simulations_H0_samples + 1)
         pvalue <= 0.05
       }))
       
@@ -225,12 +223,12 @@ for (epsilon in epsilon_values) {
         epsilon = epsilon,
         n_samples = n_samples,
         mu1 = mu1,
-        power_LLR = round(power_LLR, 3),
-        power_ddcLLR = round(power_ddcLLR, 3)
+        power_MLR = round(power_MLR, 3),
+        power_ddcMLR = round(power_ddcMLR, 3)
       ))
       
-      cat("LLR Power:", round(power_LLR, 3), "\n")
-      cat("ddcLLR Power:", round(power_ddcLLR, 3), "\n")
+      cat("MLR Power:", round(power_MLR, 3), "\n")
+      cat("ddcMLR Power:", round(power_ddcMLR, 3), "\n")
     }
   }
 }
@@ -397,12 +395,12 @@ print(results_KS)
 # Save results
 write.csv(results_KS, "ks_test_results_one_sided_with_mu1.csv", row.names = FALSE)
 
-# Merge with results_all (contains LLR and ddcLLR)
+# Merge with results_all (contains MLR and ddcMLR)
 if (exists("results_all")) {
   results_combined = merge(results_all, results_KS, by = c("epsilon", "n_samples", "mu1"))
   
   cat("\n\n========================================\n")
-  cat("COMBINED RESULTS (LLR, ddcLLR, KS, Cramér)\n")
+  cat("COMBINED RESULTS (MLR, ddcMLR, KS, Cramér)\n")
   cat("========================================\n")
   print(results_combined)
   
@@ -429,7 +427,7 @@ if (exists("results_all")) {
     plots_list = list()
     plot_counter = 0
     
-    for (test_type in c("power_LLR", "power_ddcLLR", "power_KS", "power_Cramer")) {
+    for (test_type in c("power_MLR", "power_ddcMLR", "power_KS", "power_Cramer")) {
       plot_counter = plot_counter + 1
       
       # Use results_combined
@@ -455,8 +453,8 @@ if (exists("results_all")) {
       
       # Create heatmap
       test_label = switch(test_type,
-                          "power_LLR" = "LLR",
-                          "power_ddcLLR" = "ddcLLR",
+                          "power_MLR" = "Non-Private",
+                          "power_ddcMLR" = "Ours",
                           "power_KS" = "KS",
                           "power_Cramer" = "CvM")
       
@@ -467,7 +465,7 @@ if (exists("results_all")) {
       x_label = if(plot_counter %in% c(3, 4)) "Sample Size" else ""
       
       p = ggplot(melted_data, aes(x = factor(n_samples), y = factor(mu1), fill = power)) +
-        geom_tile(color = "lightgray", size = 0.5) +
+        geom_tile(color = "lightgray", linewidth = 0.5) +
         geom_text(aes(label = label,
                       color = power > 0.4),
                   size = 5) +
@@ -478,14 +476,14 @@ if (exists("results_all")) {
              x = x_label, y = y_label) +
         theme_minimal() +
         theme(
-          axis.text.x = if(plot_counter %in% c(1, 2)) element_blank() else element_text(angle = 41, hjust = 1, size = 13, face = "bold"),
-          axis.text.y = if(plot_counter %in% c(2, 4)) element_blank() else element_text(size = 13, face = "bold"),
-          axis.title.x = if(plot_counter %in% c(1, 2)) element_blank() else element_text(size = 17, face = "bold"),
-          axis.title.y = element_text(size = 17, face = "bold"),
+          axis.text.x = if(plot_counter %in% c(1, 2)) element_blank() else element_text(angle = 33, hjust = 1, size = 15, face = "bold"),
+          axis.text.y = if(plot_counter %in% c(2, 4)) element_blank() else element_text(size = 15, face = "bold"),
+          axis.title.x = if(plot_counter %in% c(1, 2)) element_blank() else element_text(size = 18, face = "bold"),
+          axis.title.y = element_text(size = 18, face = "bold"),
           axis.ticks.x = if(plot_counter %in% c(1, 2)) element_blank() else element_line(),
           axis.ticks.y = if(plot_counter %in% c(2, 4)) element_blank() else element_line(),
           legend.position = "none",
-          plot.title = element_text(size = 17, hjust = 0.5, face = "bold"),
+          plot.title = element_text(size = 18, hjust = 0.5, face = "bold"),
           plot.margin = unit(c(0, 0, 0, 0), "pt"),
           panel.spacing = unit(0, "pt"),
           plot.background = element_blank()
@@ -510,7 +508,7 @@ if (exists("results_all")) {
     # Add title
     title = ggdraw() + 
       draw_label(paste0(""), 
-                 fontface = 'bold', size = 14)
+                 fontface = 'bold', size = 15)
     
     final_plot_with_title = plot_grid(title, plot_grid_2x2, ncol = 1, 
                                       rel_heights = c(0.05, 1))

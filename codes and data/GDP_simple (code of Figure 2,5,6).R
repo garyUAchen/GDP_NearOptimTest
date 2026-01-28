@@ -647,7 +647,7 @@ if (exists("results_all")) {
                                   "KS" = "#377EB8",
                                   "Cramer" = "#4DAF4A"),
                        labels = c("LLR" = "LLR (Non-private)",
-                                  "ddcLLR" = "ddcLLR",
+                                  "ddcLLR" = "Ours",
                                   "ncLLR" = "ncLLR",
                                   "KS" = "KS Test",
                                   "Cramer" = "Cramér-von Mises"),
@@ -684,7 +684,7 @@ if (exists("results_all")) {
                                   "KS" = "#377EB8",
                                   "Cramer" = "#4DAF4A"),
                        labels = c("LLR" = "LLR",
-                                  "ddcLLR" = "ddcLLR",
+                                  "ddcLLR" = "Ours",
                                   "ncLLR" = "ncLLR",
                                   "KS" = "KS",
                                   "Cramer" = "CvM")) +
@@ -694,7 +694,7 @@ if (exists("results_all")) {
                                      "KS" = "solid",
                                      "Cramer" = "solid"),
                           labels = c("LLR" = "LLR",
-                                     "ddcLLR" = "ddcLLR",
+                                     "ddcLLR" = "Ours",
                                      "ncLLR" = "ncLLR",
                                      "KS" = "KS",
                                      "Cramer" = "CvM")) +
